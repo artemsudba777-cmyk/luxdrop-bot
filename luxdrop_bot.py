@@ -1,13 +1,13 @@
 import logging
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# ===== ВСТАВЬ СЮДА СВОЙ ТОКЕН =====
-TOKEN = "ВСТАВЬ_ТОКЕН_СЮДА"
-# ===================================
+# Токен берётся из переменной окружения Railway
+TOKEN = os.environ.get("TOKEN")
 
 CHANNEL_URL = "https://t.me/LuxDropReStock"
-OWNER_USERNAME = "@твой_юзернейм"  # замени на свой Telegram username
+OWNER_USERNAME = "artemsudba777cmyk"  # замени на свой Telegram username без @
 
 logging.basicConfig(level=logging.INFO)
 
