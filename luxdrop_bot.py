@@ -36,7 +36,6 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         order = data.get("order", [])
         total = data.get("total", 0)
 
-        # Подтверждение покупателю
         items_text = "\n".join([f"• {i['brand']} {i['name']} — {i['size']} — {i['price']}₴" for i in order])
         await update.effective_message.reply_text(
             f"✅ *Заказ принят!*\n\n"
@@ -46,7 +45,6 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode="Markdown"
         )
 
-        # Уведомление владельцу
         user = update.effective_user
         owner_text = (
             f"🛒 *Новый заказ!*\n\n"
