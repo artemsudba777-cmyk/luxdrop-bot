@@ -1,8 +1,8 @@
 import logging
 import os
 import json
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
-from telegram.ext import Application, CommandHandler, MessageHandler, ConversationHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, ConversationHandler, CallbackQueryHandler, filters, ContextTypes
 
 TOKEN = os.environ.get("TOKEN")
 CHANNEL_URL = "https://t.me/LuxDropReStock"
@@ -12,7 +12,6 @@ OWNER_ID = 6363882470
 
 logging.basicConfig(level=logging.INFO)
 
-# States for adding new item
 PHOTO, NAME, BRAND, PRICE, TYPE, STOCK = range(6)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -21,7 +20,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📢 Наш канал", url=CHANNEL_URL)],
         [InlineKeyboardButton("💬 Связаться с нами", url=f"tg://user?id={OWNER_ID}")],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         "👋 Добро пожаловать в *LuxDrop | ReStock*!\n\n"
         "🔥 Брендовые вещи по лучшим ценам.\n"
@@ -29,12 +27,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ Доставка по всей Украине.\n\n"
         "Выбери что тебя интересует 👇",
         parse_mode="Markdown",
-        reply_markup=reply_markup
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def newitem_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
-        return
+        return ConversationHandler.END
     await update.message.reply_text("📸 Отправь фото товара:")
     return PHOTO
 
@@ -55,10 +53,10 @@ async def newitem_brand(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def newitem_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['price'] = update.message.text
-    keyboard = [
-        [InlineKeyboardButton("✅ Оригинал", callback_data="original"),
-         InlineKeyboardButton("🟡 Реплика", callback_data="replica")]
-    ]
+    keyboard = [[
+        InlineKeyboardButton("✅ Оригинал", callback_data="original"),
+        InlineKeyboardButton("🟡 Реплика", callback_data="replica")
+    ]]
     await update.message.reply_text("🏷 Тип товара:", reply_markup=InlineKeyboardMarkup(keyboard))
     return TYPE
 
@@ -67,10 +65,10 @@ async def newitem_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     context.user_data['type'] = query.data
     type_label = "✅ Оригинал" if query.data == "original" else "🟡 Реплика"
-    keyboard = [
-        [InlineKeyboardButton("✅ В наличии", callback_data="instock"),
-         InlineKeyboardButton("❌ Нет в наличии", callback_data="outstock")]
-    ]
+    keyboard = [[
+        InlineKeyboardButton("✅ В наличии", callback_data="instock"),
+        InlineKeyboardButton("❌ Нет в наличии", callback_data="outstock")
+    ]]
     await query.edit_message_text(f"Тип: {type_label}\n\n📦 Наличие:", reply_markup=InlineKeyboardMarkup(keyboard))
     return STOCK
 
@@ -79,7 +77,6 @@ async def newitem_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     in_stock = query.data == "instock"
     context.user_data['instock'] = in_stock
-
     data = context.user_data
     type_label = "✅ Оригинал" if data['type'] == "original" else "🟡 Реплика"
     stock_label = "✅ В наличии" if in_stock else "❌ Нет в наличии"
@@ -95,7 +92,6 @@ async def newitem_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [[InlineKeyboardButton("🛍 Открыть магазин", url=SHOP_URL)]]
 
-    # Post to channel
     await context.bot.send_photo(
         chat_id=CHANNEL_ID,
         photo=data['photo'],
@@ -104,7 +100,12 @@ async def newitem_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-    await query.edit_message_text(f"✅ Товар опубликован в канале!\n\n{data['brand']} — {data['name']}\n{data['price']} ₴\n{type_label} | {stock_label}")
+    await query.edit_message_text(
+        f"✅ Опубликовано в канале!\n\n"
+        f"*{data['brand']} — {data['name']}*\n"
+        f"{data['price']} ₴ | {type_label} | {stock_label}",
+        parse_mode="Markdown"
+    )
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -161,9 +162,8 @@ def main():
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, newitem_name)],
             BRAND: [MessageHandler(filters.TEXT & ~filters.COMMAND, newitem_brand)],
             PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, newitem_price)],
-            TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, newitem_type),
-                   app.callback_query_handler(newitem_type)],
-            STOCK: [app.callback_query_handler(newitem_stock)],
+            TYPE: [CallbackQueryHandler(newitem_type, pattern="^(original|replica)$")],
+            STOCK: [CallbackQueryHandler(newitem_stock, pattern="^(instock|outstock)$")],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
