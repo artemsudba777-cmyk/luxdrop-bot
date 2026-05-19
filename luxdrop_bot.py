@@ -2,13 +2,12 @@ import logging
 import os
 import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 TOKEN = os.environ.get("TOKEN")
 
 CHANNEL_URL = "https://t.me/LuxDropReStock"
 SHOP_URL = "https://artemsudba777-cmyk.github.io/luxdrop-bot/luxdrop_shop.html"
-OWNER_USERNAME = "tattoo_on_your_body"
 OWNER_ID = 6363882470
 
 logging.basicConfig(level=logging.INFO)
@@ -17,7 +16,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🛍 Открыть магазин", url=SHOP_URL)],
         [InlineKeyboardButton("📢 Наш канал", url=CHANNEL_URL)],
-        [InlineKeyboardButton("💬 Связаться с нами", url=f"https://t.me/{OWNER_USERNAME}")],
+        [InlineKeyboardButton("💬 Связаться с нами", url=f"tg://user?id={OWNER_ID}")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
