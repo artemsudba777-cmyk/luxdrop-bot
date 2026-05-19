@@ -309,7 +309,7 @@ function openProduct(id) {
       <div class="sizes">
         ${p.sizes.map(s => `<button class="size-btn" onclick="selectSize('${s}',this)">${s}</button>`).join('')}
       </div>
-      <button class="order-btn" onclick="addToCart(${p.id})">В КОРЗИНУ</button>
+      ${!p.inStock ? '<button class="order-btn" style="background:#333;color:#666;cursor:not-allowed" disabled>НЕТ В НАЛИЧИИ</button>' : '<button class="order-btn" onclick="addToCart(' + p.id + ')">В КОРЗИНУ</button>'}
     </div>
   `;
 }
