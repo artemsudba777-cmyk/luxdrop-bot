@@ -9,6 +9,7 @@ CHANNEL_URL = "https://t.me/LuxDropReStock"
 CHANNEL_ID = "@LuxDropReStock"
 SHOP_URL = "https://artemsudba777-cmyk.github.io/luxdrop-bot/luxdrop_shop.html"
 OWNER_ID = 6363882470
+OWNER_USERNAME = "tattoo_on_your_body"
 
 logging.basicConfig(level=logging.INFO)
 
@@ -29,8 +30,16 @@ def sizes_keyboard(selected):
     buttons.append([InlineKeyboardButton("✅ Готово", callback_data="sizes_done")])
     return InlineKeyboardMarkup(buttons)
 
-def item_sizes_keyboard(item_key, sizes, selected_size=None):
-    """Keyboard shown in channel post"""
+def channel_item_keyboard(item_key):
+    """Кнопки в канале — только одна кнопка 'Купить', без размеров"""
+    buttons = [
+        [InlineKeyboardButton("🛒 Купить", callback_data=f"buy|{item_key}")],
+        [InlineKeyboardButton("🛍 Все товары", url=SHOP_URL)],
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+def personal_sizes_keyboard(item_key, sizes, selected_size=None):
+    """Клавиатура с размерами — отправляется в ЛИЧКУ покупателю"""
     buttons = []
     for s in sizes:
         if s == selected_size:
@@ -38,19 +47,24 @@ def item_sizes_keyboard(item_key, sizes, selected_size=None):
         else:
             label = f"📏 {s}"
         buttons.append([InlineKeyboardButton(label, callback_data=f"pick|{item_key}|{s}")])
-    
+
     if selected_size:
-        buttons.append([InlineKeyboardButton(f"🛒 Оформить заказ ({selected_size})", callback_data=f"order|{item_key}|{selected_size}")])
-        buttons.append([InlineKeyboardButton("← Назад к размерам", callback_data=f"back|{item_key}|{'|'.join(sizes)}")])
-    
-    buttons.append([InlineKeyboardButton("🛍 Все товары", url=SHOP_URL)])
+        buttons.append([InlineKeyboardButton(
+            f"🛒 Оформить заказ ({selected_size})",
+            callback_data=f"order|{item_key}|{selected_size}"
+        )])
+        buttons.append([InlineKeyboardButton(
+            "← Назад к размерам",
+            callback_data=f"back|{item_key}|{'~'.join(sizes)}"
+        )])
+
     return InlineKeyboardMarkup(buttons)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🛍 Открыть магазин", url=SHOP_URL)],
         [InlineKeyboardButton("📢 Наш канал", url=CHANNEL_URL)],
-        [InlineKeyboardButton("💬 Связаться с нами", url=f"tg://user?id={OWNER_ID}")],
+        [InlineKeyboardButton("💬 Связаться с нами", url=f"https://t.me/{OWNER_USERNAME}")],
     ]
     await update.message.reply_text(
         "👋 Добро пожаловать в *LuxDrop | ReStock*!\n\n"
@@ -145,17 +159,19 @@ async def newitem_sizes_done(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"🔥 *{data['brand']} — {data['name']}*\n\n"
         f"{type_label} | {stock_label}\n\n"
         f"💰 Цена: *{data['price']} ₴*\n\n"
-        f"👇 Выбери размер:"
+        f"👇 Нажми кнопку чтобы выбрать размер и оформить заказ:"
     )
 
-    item_key = f"{data['brand']}|{data['name']}|{data['price']}"
-    
+    # item_key хранит бренд, название, цену и размеры через ~
+    sizes_str = "~".join(sizes)
+    item_key = f"{data['brand']}|{data['name']}|{data['price']}|{sizes_str}"
+
     await context.bot.send_photo(
         chat_id=CHANNEL_ID,
         photo=data['photo'],
         caption=caption,
         parse_mode="Markdown",
-        reply_markup=item_sizes_keyboard(item_key, sizes)
+        reply_markup=channel_item_keyboard(item_key)
     )
 
     await query.edit_message_text(
@@ -164,58 +180,98 @@ async def newitem_sizes_done(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     return ConversationHandler.END
 
+async def handle_buy_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Покупатель нажал 'Купить' в канале — отправляем выбор размера в ЛИЧКУ"""
+    query = update.callback_query
+    await query.answer("Выбери размер в личных сообщениях с ботом 👇")
+
+    parts = query.data.split("|")
+    # parts: buy | brand | name | price | sizes_str
+    brand = parts[1]
+    name = parts[2]
+    price = parts[3]
+    sizes = parts[4].split("~")
+    item_key = f"{brand}|{name}|{price}"
+
+    user = query.from_user
+
+    try:
+        await context.bot.send_message(
+            chat_id=user.id,
+            text=(
+                f"🔥 *{brand} — {name}*\n"
+                f"💰 Цена: *{price} ₴*\n\n"
+                f"📏 Выбери свой размер:"
+            ),
+            parse_mode="Markdown",
+            reply_markup=personal_sizes_keyboard(item_key, sizes)
+        )
+    except Exception:
+        # Если бот не может написать в личку (пользователь не запускал бота)
+        await context.bot.send_message(
+            chat_id=user.id,
+            text=(
+                f"⚠️ Чтобы оформить заказ, сначала нажми /start в боте @LuxDropReStock_bot\n"
+                f"Затем вернись и нажми 'Купить' снова."
+            )
+        )
+
 async def handle_size_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """User picked a size - highlight it and show confirm button"""
+    """Покупатель выбрал размер в личке"""
     query = update.callback_query
     await query.answer(f"Размер выбран!")
-    
+
     parts = query.data.split("|")
-    item_key = parts[1] + "|" + parts[2] + "|" + parts[3]
+    # parts: pick | brand | name | price | size
+    brand = parts[1]
+    name = parts[2]
+    price = parts[3]
     selected_size = parts[4]
-    
-    brand, name, price = parts[1], parts[2], parts[3]
-    
-    # Get all sizes from current keyboard
-    current_keyboard = query.message.reply_markup.inline_keyboard
+    item_key = f"{brand}|{name}|{price}"
+
+    # Получаем список размеров из текущей клавиатуры
     sizes = []
-    for row in current_keyboard:
+    for row in query.message.reply_markup.inline_keyboard:
         for btn in row:
             if btn.callback_data and btn.callback_data.startswith("pick|"):
                 s = btn.callback_data.split("|")[-1]
                 sizes.append(s)
             elif btn.callback_data and btn.callback_data.startswith("back|"):
-                sizes_from_back = btn.callback_data.split("|")[2:]
-                sizes = sizes_from_back
-                break
+                sizes = btn.callback_data.split("|")[-1].split("~")
 
     if not sizes:
         sizes = [selected_size]
 
     await query.edit_message_reply_markup(
-        reply_markup=item_sizes_keyboard(item_key, sizes, selected_size)
+        reply_markup=personal_sizes_keyboard(item_key, sizes, selected_size)
     )
 
 async def handle_back_to_sizes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Go back to size selection"""
+    """Назад к выбору размера в личке"""
     query = update.callback_query
     await query.answer()
-    
+
     parts = query.data.split("|")
-    item_key = parts[1] + "|" + parts[2] + "|" + parts[3]
-    sizes = parts[4:]
-    
+    brand = parts[1]
+    name = parts[2]
+    price = parts[3]
+    sizes = parts[4].split("~")
+    item_key = f"{brand}|{name}|{price}"
+
     await query.edit_message_reply_markup(
-        reply_markup=item_sizes_keyboard(item_key, sizes, None)
+        reply_markup=personal_sizes_keyboard(item_key, sizes, None)
     )
 
 async def handle_order_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Покупатель подтвердил заказ в личке"""
     query = update.callback_query
     await query.answer("✅ Заказ оформлен!", show_alert=True)
-    
+
     parts = query.data.split("|")
     brand, name, price, size = parts[1], parts[2], parts[3], parts[4]
     user = query.from_user
 
+    # Уведомление владельцу
     owner_text = (
         f"🛒 *Новый заказ с канала!*\n\n"
         f"👕 *{brand} — {name}*\n"
@@ -232,14 +288,16 @@ async def handle_order_button(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-    try:
-        await context.bot.send_message(
-            chat_id=user.id,
-            text=f"✅ *Заказ принят!*\n\n👕 {brand} — {name}\n📏 Размер: {size}\n💰 {price} ₴\n\nМы свяжемся с вами в ближайшее время 🤝",
-            parse_mode="Markdown"
-        )
-    except:
-        pass
+    # Подтверждение покупателю
+    await query.edit_message_text(
+        f"✅ *Заказ принят!*\n\n"
+        f"👕 {brand} — {name}\n"
+        f"📏 Размер: {size}\n"
+        f"💰 {price} ₴\n\n"
+        f"Мы свяжемся с вами в ближайшее время 🤝\n\n"
+        f"По вопросам: @{OWNER_USERNAME}",
+        parse_mode="Markdown"
+    )
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Отменено.")
@@ -293,6 +351,7 @@ def main():
     )
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv_handler)
+    app.add_handler(CallbackQueryHandler(handle_buy_button, pattern="^buy\\|"))
     app.add_handler(CallbackQueryHandler(handle_size_pick, pattern="^pick\\|"))
     app.add_handler(CallbackQueryHandler(handle_order_button, pattern="^order\\|"))
     app.add_handler(CallbackQueryHandler(handle_back_to_sizes, pattern="^back\\|"))
