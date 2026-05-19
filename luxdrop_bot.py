@@ -30,34 +30,18 @@ def sizes_keyboard(selected):
     buttons.append([InlineKeyboardButton("✅ Готово", callback_data="sizes_done")])
     return InlineKeyboardMarkup(buttons)
 
-def channel_item_keyboard(item_key):
-    """Кнопки в канале — только одна кнопка 'Купить', без размеров"""
-    buttons = [
-        [InlineKeyboardButton("🛒 Купить", callback_data=f"buy|{item_key}")],
-        [InlineKeyboardButton("🛍 Все товары", url=SHOP_URL)],
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-def personal_sizes_keyboard(item_key, sizes, selected_size=None):
-    """Клавиатура с размерами — отправляется в ЛИЧКУ покупателю"""
+def channel_item_keyboard(item_key, sizes):
+    """Кнопки размеров в канале — нажатие сразу оформляет заказ"""
     buttons = []
+    row = []
     for s in sizes:
-        if s == selected_size:
-            label = f"✅ {s} — выбран"
-        else:
-            label = f"📏 {s}"
-        buttons.append([InlineKeyboardButton(label, callback_data=f"pick|{item_key}|{s}")])
-
-    if selected_size:
-        buttons.append([InlineKeyboardButton(
-            f"🛒 Оформить заказ ({selected_size})",
-            callback_data=f"order|{item_key}|{selected_size}"
-        )])
-        buttons.append([InlineKeyboardButton(
-            "← Назад к размерам",
-            callback_data=f"back|{item_key}|{'~'.join(sizes)}"
-        )])
-
+        row.append(InlineKeyboardButton(f"🛒 Купить {s}", callback_data=f"order|{item_key}|{s}"))
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("🛍 Все товары", url=SHOP_URL)])
     return InlineKeyboardMarkup(buttons)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -155,23 +139,23 @@ async def newitem_sizes_done(update: Update, context: ContextTypes.DEFAULT_TYPE)
     type_label = "✅ Оригинал" if data['type'] == "original" else "🟡 Реплика"
     stock_label = "✅ В наличии" if data['instock'] else "❌ Нет в наличии"
 
+    sizes_text = " | ".join([f"`{s}`" for s in sizes])
     caption = (
         f"🔥 *{data['brand']} — {data['name']}*\n\n"
         f"{type_label} | {stock_label}\n\n"
         f"💰 Цена: *{data['price']} ₴*\n\n"
-        f"👇 Нажми кнопку чтобы выбрать размер и оформить заказ:"
+        f"📏 Размеры в наличии: {sizes_text}\n\n"
+        f"👇 Нажми на свой размер чтобы заказать:"
     )
 
-    # item_key хранит бренд, название, цену и размеры через ~
-    sizes_str = "~".join(sizes)
-    item_key = f"{data['brand']}|{data['name']}|{data['price']}|{sizes_str}"
+    item_key = f"{data['brand']}|{data['name']}|{data['price']}"
 
     await context.bot.send_photo(
         chat_id=CHANNEL_ID,
         photo=data['photo'],
         caption=caption,
         parse_mode="Markdown",
-        reply_markup=channel_item_keyboard(item_key)
+        reply_markup=channel_item_keyboard(item_key, sizes)
     )
 
     await query.edit_message_text(
@@ -180,104 +164,23 @@ async def newitem_sizes_done(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     return ConversationHandler.END
 
-async def handle_buy_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Покупатель нажал 'Купить' в канале — отправляем выбор размера в ЛИЧКУ"""
-    query = update.callback_query
-    await query.answer("Выбери размер в личных сообщениях с ботом 👇")
-
-    parts = query.data.split("|")
-    # parts: buy | brand | name | price | sizes_str
-    brand = parts[1]
-    name = parts[2]
-    price = parts[3]
-    sizes = parts[4].split("~")
-    item_key = f"{brand}|{name}|{price}"
-
-    user = query.from_user
-
-    try:
-        await context.bot.send_message(
-            chat_id=user.id,
-            text=(
-                f"🔥 *{brand} — {name}*\n"
-                f"💰 Цена: *{price} ₴*\n\n"
-                f"📏 Выбери свой размер:"
-            ),
-            parse_mode="Markdown",
-            reply_markup=personal_sizes_keyboard(item_key, sizes)
-        )
-    except Exception:
-        # Если бот не может написать в личку (пользователь не запускал бота)
-        await context.bot.send_message(
-            chat_id=user.id,
-            text=(
-                f"⚠️ Чтобы оформить заказ, сначала нажми /start в боте @LuxDropReStock_bot\n"
-                f"Затем вернись и нажми 'Купить' снова."
-            )
-        )
-
-async def handle_size_pick(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Покупатель выбрал размер в личке"""
-    query = update.callback_query
-    await query.answer(f"Размер выбран!")
-
-    parts = query.data.split("|")
-    # parts: pick | brand | name | price | size
-    brand = parts[1]
-    name = parts[2]
-    price = parts[3]
-    selected_size = parts[4]
-    item_key = f"{brand}|{name}|{price}"
-
-    # Получаем список размеров из текущей клавиатуры
-    sizes = []
-    for row in query.message.reply_markup.inline_keyboard:
-        for btn in row:
-            if btn.callback_data and btn.callback_data.startswith("pick|"):
-                s = btn.callback_data.split("|")[-1]
-                sizes.append(s)
-            elif btn.callback_data and btn.callback_data.startswith("back|"):
-                sizes = btn.callback_data.split("|")[-1].split("~")
-
-    if not sizes:
-        sizes = [selected_size]
-
-    await query.edit_message_reply_markup(
-        reply_markup=personal_sizes_keyboard(item_key, sizes, selected_size)
-    )
-
-async def handle_back_to_sizes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Назад к выбору размера в личке"""
-    query = update.callback_query
-    await query.answer()
-
-    parts = query.data.split("|")
-    brand = parts[1]
-    name = parts[2]
-    price = parts[3]
-    sizes = parts[4].split("~")
-    item_key = f"{brand}|{name}|{price}"
-
-    await query.edit_message_reply_markup(
-        reply_markup=personal_sizes_keyboard(item_key, sizes, None)
-    )
-
 async def handle_order_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Покупатель подтвердил заказ в личке"""
+    """Покупатель нажал на размер → сразу отправляем заказ владельцу"""
     query = update.callback_query
-    await query.answer("✅ Заказ оформлен!", show_alert=True)
+    await query.answer("✅ Заказ отправлен! Мы свяжемся с вами.", show_alert=True)
 
     parts = query.data.split("|")
     brand, name, price, size = parts[1], parts[2], parts[3], parts[4]
     user = query.from_user
 
-    # Уведомление владельцу
+    # Уведомление тебе в личку
     owner_text = (
-        f"🛒 *Новый заказ с канала!*\n\n"
+        f"🛒 *Новый заказ!*\n\n"
         f"👕 *{brand} — {name}*\n"
         f"📏 Размер: *{size}*\n"
         f"💰 Цена: *{price} ₴*\n\n"
-        f"👤 {user.first_name}{' @' + user.username if user.username else ''}\n"
+        f"👤 {user.first_name}"
+        f"{' @' + user.username if user.username else ' (нет username)'}\n"
         f"🆔 `{user.id}`"
     )
     keyboard = [[InlineKeyboardButton("💬 Написать покупателю", url=f"tg://user?id={user.id}")]]
@@ -288,16 +191,22 @@ async def handle_order_button(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-    # Подтверждение покупателю
-    await query.edit_message_text(
-        f"✅ *Заказ принят!*\n\n"
-        f"👕 {brand} — {name}\n"
-        f"📏 Размер: {size}\n"
-        f"💰 {price} ₴\n\n"
-        f"Мы свяжемся с вами в ближайшее время 🤝\n\n"
-        f"По вопросам: @{OWNER_USERNAME}",
-        parse_mode="Markdown"
-    )
+    # Подтверждение покупателю в личку
+    try:
+        await context.bot.send_message(
+            chat_id=user.id,
+            text=(
+                f"✅ *Заказ принят!*\n\n"
+                f"👕 {brand} — {name}\n"
+                f"📏 Размер: {size}\n"
+                f"💰 {price} ₴\n\n"
+                f"Мы свяжемся с вами в ближайшее время 🤝\n"
+                f"По вопросам: @{OWNER_USERNAME}"
+            ),
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass  # Если покупатель не запускал бота — заказ тебе уже пришёл
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Отменено.")
@@ -308,7 +217,6 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         data = json.loads(update.effective_message.web_app_data.data)
         order = data.get("order", [])
         total = data.get("total", 0)
-        name = data.get("name", "")
         phone = data.get("phone", "")
         city = data.get("city", "")
         branch = data.get("branch", "")
@@ -327,7 +235,12 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"{items_text}\n\n💰 *{total}₴*"
         )
         keyboard = [[InlineKeyboardButton("💬 Написати покупцю", url=f"tg://user?id={user.id}")]]
-        await context.bot.send_message(chat_id=OWNER_ID, text=owner_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        await context.bot.send_message(
+            chat_id=OWNER_ID,
+            text=owner_text,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
     except Exception as e:
         logging.error(f"Error: {e}")
 
@@ -351,10 +264,7 @@ def main():
     )
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv_handler)
-    app.add_handler(CallbackQueryHandler(handle_buy_button, pattern="^buy\\|"))
-    app.add_handler(CallbackQueryHandler(handle_size_pick, pattern="^pick\\|"))
     app.add_handler(CallbackQueryHandler(handle_order_button, pattern="^order\\|"))
-    app.add_handler(CallbackQueryHandler(handle_back_to_sizes, pattern="^back\\|"))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_web_app_data))
     print("✅ LuxDrop бот запущен!")
     app.run_polling()
