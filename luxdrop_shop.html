@@ -381,9 +381,9 @@ function checkout() {
   if (window.Telegram && window.Telegram.WebApp) {
     window.Telegram.WebApp.sendData(JSON.stringify({order: cart.map(i => ({name: i.name, size: i.selectedSize, price: i.price, brand: i.brand})), total}));
   } else {
-    const items = cart.map(i => i.brand + ' ' + i.name + ' (' + i.selectedSize + ') - ' + i.price + '₴').join('%0A');
-    const msg = 'Хочу оформити замовлення:%0A' + items + '%0A%0AІтого: ' + total + '₴';
-    window.open('https://t.me/artemsudba777cmyk?text=' + msg, '_blank');
+    const items = cart.map(i => i.brand + ' ' + i.name + ' (' + i.selectedSize + ') - ' + i.price + '\u20B4').join('%0A');
+    const msg = '\uD83D\uDED2 Новый заказ:%0A' + items + '%0A%0A\uD83D\uDCB0 Итого: ' + total + '\u20B4';
+    window.open('https://t.me/' + encodeURIComponent('tattoo_on_your_body') + '?text=' + msg, '_blank');
   }
 }
 
