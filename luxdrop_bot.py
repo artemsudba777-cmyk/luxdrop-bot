@@ -12,7 +12,23 @@ OWNER_ID = 6363882470
 
 logging.basicConfig(level=logging.INFO)
 
-PHOTO, NAME, BRAND, PRICE, TYPE, STOCK, SIZES = range(7)
+PHOTO, NAME, BRAND, PRICE, TYPE, STOCK, SIZES_SELECT = range(7)
+
+ALL_SIZES = ["XS", "S", "M", "L", "XL", "XXL", "3XL"]
+
+def sizes_keyboard(selected):
+    buttons = []
+    row = []
+    for s in ALL_SIZES:
+        label = f"✅ {s}" if s in selected else s
+        row.append(InlineKeyboardButton(label, callback_data=f"size|{s}"))
+        if len(row) == 4:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("✅ Готово", callback_data="sizes_done")])
+    return InlineKeyboardMarkup(buttons)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -33,6 +49,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def newitem_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return ConversationHandler.END
+    context.user_data.clear()
     await update.message.reply_text("📸 Отправь фото товара:")
     return PHOTO
 
@@ -76,18 +93,38 @@ async def newitem_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data['instock'] = query.data == "stock_in"
+    context.user_data['selected_sizes'] = []
     await query.edit_message_text(
-        "📏 Введи доступные размеры через запятую:\n\n"
-        "Например: S, M, L, XL, XXL\n"
-        "Или: 38, 40, 42, 44"
+        "📏 Выбери доступные размеры (нажимай чтобы отметить):",
+        reply_markup=sizes_keyboard([])
     )
-    return SIZES
+    return SIZES_SELECT
 
-async def newitem_sizes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sizes = [s.strip() for s in update.message.text.split(",")]
-    context.user_data['sizes'] = sizes
+async def newitem_size_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    size = query.data.replace("size|", "")
+    selected = context.user_data.get('selected_sizes', [])
+    if size in selected:
+        selected.remove(size)
+    else:
+        selected.append(size)
+    context.user_data['selected_sizes'] = selected
+    await query.edit_message_text(
+        "📏 Выбери доступные размеры (нажимай чтобы отметить):",
+        reply_markup=sizes_keyboard(selected)
+    )
+    return SIZES_SELECT
+
+async def newitem_sizes_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    sizes = context.user_data.get('selected_sizes', [])
+    if not sizes:
+        await query.answer("Выбери хотя бы один размер!", show_alert=True)
+        return SIZES_SELECT
+
     data = context.user_data
-
     type_label = "✅ Оригинал" if data['type'] == "original" else "🟡 Реплика"
     stock_label = "✅ В наличии" if data['instock'] else "❌ Нет в наличии"
 
@@ -95,78 +132,66 @@ async def newitem_sizes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🔥 *{data['brand']} — {data['name']}*\n\n"
         f"{type_label} | {stock_label}\n\n"
         f"💰 Цена: *{data['price']} ₴*\n\n"
-        f"👇 Выбери размер и закажи прямо здесь:"
+        f"👇 Выбери размер и закажи:"
     )
 
-    # Size buttons
     item_key = f"{data['brand']}|{data['name']}|{data['price']}"
-    size_buttons = [
-        InlineKeyboardButton(f"📏 {s}", callback_data=f"order|{item_key}|{s}")
-        for s in sizes
-    ]
     
-    # Group buttons by 3 per row
-    keyboard = []
-    for i in range(0, len(size_buttons), 3):
-        keyboard.append(size_buttons[i:i+3])
-    keyboard.append([InlineKeyboardButton("🛍 Все товары", url=SHOP_URL)])
+    # Each size in separate button
+    size_buttons = []
+    for s in sizes:
+        size_buttons.append([InlineKeyboardButton(f"📏 {s}", callback_data=f"order|{item_key}|{s}")])
+    size_buttons.append([InlineKeyboardButton("🛍 Все товары", url=SHOP_URL)])
 
     await context.bot.send_photo(
         chat_id=CHANNEL_ID,
         photo=data['photo'],
         caption=caption,
         parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(size_buttons)
     )
 
-    await update.message.reply_text(
-        f"✅ Опубликовано в канале!\n\n"
-        f"*{data['brand']} — {data['name']}*\n"
-        f"{data['price']} ₴ | {type_label}",
+    await query.edit_message_text(
+        f"✅ Опубликовано!\n\n*{data['brand']} — {data['name']}*\n{data['price']} ₴\nРазмеры: {', '.join(sizes)}",
         parse_mode="Markdown"
     )
     return ConversationHandler.END
 
 async def handle_order_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer("✅ Заказ отправлен!", show_alert=False)
+    await query.answer("✅ Заказ отправлен!", show_alert=True)
     
     parts = query.data.split("|")
     brand = parts[1]
     name = parts[2]
     price = parts[3]
     size = parts[4]
-    
     user = query.from_user
-    
-    # Notify owner
+
     owner_text = (
         f"🛒 *Новый заказ с канала!*\n\n"
         f"👕 *{brand} — {name}*\n"
         f"📏 Размер: *{size}*\n"
         f"💰 Цена: *{price} ₴*\n\n"
         f"👤 {user.first_name}{' @' + user.username if user.username else ''}\n"
-        f"🆔 ID: `{user.id}`"
+        f"🆔 `{user.id}`"
     )
     keyboard = [[InlineKeyboardButton("💬 Написать покупателю", url=f"tg://user?id={user.id}")]]
-    
     await context.bot.send_message(
         chat_id=OWNER_ID,
         text=owner_text,
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
-    
-    # Confirm to buyer
-    await context.bot.send_message(
-        chat_id=user.id,
-        text=f"✅ *Заказ принят!*\n\n"
-             f"👕 {brand} — {name}\n"
-             f"📏 Размер: {size}\n"
-             f"💰 {price} ₴\n\n"
-             f"Мы свяжемся с вами в ближайшее время 🤝",
-        parse_mode="Markdown"
-    )
+
+    try:
+        await context.bot.send_message(
+            chat_id=user.id,
+            text=f"✅ *Заказ принят!*\n\n👕 {brand} — {name}\n📏 Размер: {size}\n💰 {price} ₴\n\nМы свяжемся с вами в ближайшее время 🤝",
+            parse_mode="Markdown"
+        )
+    except:
+        pass
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Отменено.")
@@ -182,35 +207,26 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         city = data.get("city", "")
         branch = data.get("branch", "")
         delivery = data.get("delivery", "")
-
         items_text = "\n".join([f"• {i['brand']} {i['name']} — {i['size']} — {i['price']}₴" for i in order])
-
         await update.effective_message.reply_text(
-            f"✅ *Замовлення прийнято!*\n\n{items_text}\n\n💰 Підсумок: *{total}₴*\n\nМи зв'яжемося з вами найближчим часом 🤝",
+            f"✅ *Замовлення прийнято!*\n\n{items_text}\n\n💰 *{total}₴*\n\nМи зв'яжемося з вами найближчим часом 🤝",
             parse_mode="Markdown"
         )
-
         user = update.effective_user
         owner_text = (
             f"🛒 *Новий заказ з магазину!*\n\n"
             f"👤 {user.first_name}{' @' + user.username if user.username else ''}\n"
             f"📞 {phone}\n"
             f"🚚 {delivery}{', ' + city if city else ''}{', №' + branch if branch else ''}\n\n"
-            f"{items_text}\n\n💰 Підсумок: *{total}₴*"
+            f"{items_text}\n\n💰 *{total}₴*"
         )
         keyboard = [[InlineKeyboardButton("💬 Написати покупцю", url=f"tg://user?id={user.id}")]]
-        await context.bot.send_message(
-            chat_id=OWNER_ID,
-            text=owner_text,
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        await context.bot.send_message(chat_id=OWNER_ID, text=owner_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
         logging.error(f"Error: {e}")
 
 def main():
     app = Application.builder().token(TOKEN).build()
-
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("newitem", newitem_start)],
         states={
@@ -220,16 +236,17 @@ def main():
             PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, newitem_price)],
             TYPE: [CallbackQueryHandler(newitem_type, pattern="^type_")],
             STOCK: [CallbackQueryHandler(newitem_stock, pattern="^stock_")],
-            SIZES: [MessageHandler(filters.TEXT & ~filters.COMMAND, newitem_sizes)],
+            SIZES_SELECT: [
+                CallbackQueryHandler(newitem_size_toggle, pattern="^size\\|"),
+                CallbackQueryHandler(newitem_sizes_done, pattern="^sizes_done$"),
+            ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv_handler)
     app.add_handler(CallbackQueryHandler(handle_order_button, pattern="^order\\|"))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_web_app_data))
-
     print("✅ LuxDrop бот запущен!")
     app.run_polling()
 
