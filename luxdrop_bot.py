@@ -8,7 +8,7 @@ TOKEN = os.environ.get("TOKEN")
 
 CHANNEL_URL = "https://t.me/LuxDropReStock"
 SHOP_URL = "https://artemsudba777-cmyk.github.io/luxdrop-bot/luxdrop_shop.html"
-OWNER_USERNAME = "artemsudba777cmyk"
+OWNER_USERNAME = "tattoo_on_your_body"
 OWNER_ID = 6363882470
 
 logging.basicConfig(level=logging.INFO)
