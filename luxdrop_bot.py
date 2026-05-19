@@ -3,19 +3,19 @@ import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# Токен берётся из переменной окружения Railway
 TOKEN = os.environ.get("TOKEN")
 
 CHANNEL_URL = "https://t.me/LuxDropReStock"
-OWNER_USERNAME = "artemsudba777cmyk"  # замени на свой Telegram username без @
+SHOP_URL = "https://artemsudba777-cmyk.github.io/luxdrop-bot/luxdrop_shop.html"
+OWNER_USERNAME = "artemsudba777cmyk"
 
 logging.basicConfig(level=logging.INFO)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("🛍 Перейти в магазин", url=CHANNEL_URL)],
-        [InlineKeyboardButton("📦 Новые поступления", callback_data="new")],
-        [InlineKeyboardButton("💬 Связаться с нами", url=f"https://t.me/{OWNER_USERNAME.replace('@', '')}")],
+        [InlineKeyboardButton("🛍 Открыть магазин", url=SHOP_URL)],
+        [InlineKeyboardButton("📢 Наш канал", url=CHANNEL_URL)],
+        [InlineKeyboardButton("💬 Связаться с нами", url=f"https://t.me/{OWNER_USERNAME}")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -29,25 +29,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "new":
-        keyboard = [[InlineKeyboardButton("📢 Смотреть новинки", url=CHANNEL_URL)]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            "🆕 *Новые поступления*\n\n"
-            "Все свежие дропы публикуем в нашем канале.\n"
-            "Подпишись чтобы не пропустить 🔔",
-            parse_mode="Markdown",
-            reply_markup=reply_markup
-        )
-
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button))
     print("✅ LuxDrop | ReStock бот запущен!")
     app.run_polling()
 
